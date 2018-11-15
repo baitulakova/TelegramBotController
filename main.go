@@ -58,6 +58,23 @@ func (b *Bot) SendAudio(chatId int64,filename string){
 	b.BotAPI.Send(audio)
 }
 
+func (b *Bot) SendNotification(update tgbotapi.Update,channel chan bool,msg string){
+	count:=0
+	for{
+		b.SendMessage(update.Message.Chat.ID,msg)
+		time.Sleep(time.Second*5)
+		b.SendMessage(update.Message.Chat.ID,msg)
+		time.Sleep(time.Second*5)
+		b.SendMessage(update.Message.Chat.ID,msg)
+		time.Sleep(time.Second*5)
+		if n:=<-channel;n{
+			break
+		}
+		count++
+	}
+	logrus.Infof("Stopped sending notifications. [%v]",count)
+}
+
 func main(){
 	flag.Parse()
 	bot,err:=NewBot(*token)
@@ -73,7 +90,8 @@ func main(){
 	time.Sleep(time.Millisecond*500)
 	bot.UpdatesChannel.Clear()
 
-	channel:=make(chan int,2)
+	channel1:=make(chan bool)
+	channel2:=make(chan bool)
 
 	for update:=range bot.UpdatesChannel{
 		if update.Message==nil{
@@ -88,6 +106,10 @@ func main(){
 				bot.SendMessage(update.Message.Chat.ID,"Unexpected error. Please try again")
 				continue
 			}
+
+			logrus.Info("Started sending notifications to user")
+			go bot.SendNotification(update,channel1,"I am searching video")
+
 			logrus.Info("Started searching video")
 			vid,err:=client.Search(update.Message.Text)
 			if err!=nil{
@@ -111,19 +133,12 @@ func main(){
 				continue
 			}
 			logrus.Info("Successfully got download link")
-			//channel<-1
+			channel1<-true
 			bot.SendMessage(update.Message.Chat.ID,"Started converting")
 			audioName:=vid.Title+".mp3"
 
-			go func(){
-				for{
-					bot.SendMessage(update.Message.Chat.ID,"I am converting video")
-					time.Sleep(time.Second*5)
-					if n:=<-channel;n==2{
-						break
-					}
-				}
-			}()
+			logrus.Info("Started sending notifications to user")
+			go bot.SendNotification(update,channel2,"Please wait. I am converting video")
 
 			logrus.Info("Started converting video")
 			err=ffmpeg.ConvertVideoToAudio(url,audioName)
@@ -135,7 +150,7 @@ func main(){
 			logrus.Info("Finished  converting process")
 			bot.SendAudio(update.Message.Chat.ID,audioName)
 			logrus.Info("Sended message to client")
-			channel<-2
+			channel2<-true
 			os.Remove(audioName)
 			logrus.Info("Removed file ",audioName)
 		}
