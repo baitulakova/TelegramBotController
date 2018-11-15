@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 	"github.com/go-telegram-bot-api/telegram-bot-api"
-	"log"
+	"github.com/sirupsen/logrus"
 	"time"
 	"github.com/baitulakova/TelegramBotController/youtube"
 	"github.com/baitulakova/TelegramBotController/ffmpeg"
@@ -12,7 +12,7 @@ import (
 
 var token=flag.String("t","","unique bot's token provided by @BotFather on Telegram")
 var key=flag.String("key","","Developer key")
-var videolink ="https://www.youtube.com/watch?v="
+var videoLink ="https://www.youtube.com/watch?v="
 
 type Bot struct{
 	BotAPI *tgbotapi.BotAPI
@@ -23,28 +23,29 @@ type Bot struct{
 func NewBot(token string)(Bot,error){
 	Bot:=Bot{}
 	if token==""{
-		log.Fatal("Token is empty")
+		logrus.Fatal("Token is empty")
 	}
 	botApi,err:=tgbotapi.NewBotAPI(token)
 	if err!=nil{
 		return Bot,err
 	}
 	Bot.BotAPI=botApi
-	Bot.BotAPI.Debug=true
+	Bot.BotAPI.Debug=false
 
 	return Bot,err
 }
 
-func (bot *Bot)GetUpdates(){
+func (bot *Bot)GetUpdates()error{
 	u:=tgbotapi.NewUpdate(0)
 	u.Timeout=60
 
 	updates,err:=bot.BotAPI.GetUpdatesChan(u)
 	if err!=nil{
-		log.Fatal("Error getting updates: ",err)
+		return err
 	}
 	bot.UpdatesChannel=updates
 	updates.Clear()
+	return nil
 }
 
 func (b *Bot) SendMessage(chatId int64,msg string){
@@ -61,9 +62,14 @@ func main(){
 	flag.Parse()
 	bot,err:=NewBot(*token)
 	if err!=nil{
-		log.Fatal("Error creating bot")
+		logrus.Fatal("Error creating bot")
 	}
-	bot.GetUpdates()
+	logrus.Info("Bot started")
+	err=bot.GetUpdates()
+	if err!=nil{
+		logrus.Error("Error getting updates")
+	}
+	logrus.Info("Successfully got updates")
 	time.Sleep(time.Millisecond*500)
 	bot.UpdatesChannel.Clear()
 
@@ -74,26 +80,37 @@ func main(){
 			continue
 		}
 		if update.Message.Text!="/start"{
-			log.Println(update.Message.Text)
+			logrus.Info("Client sended: ", update.Message.Text)
 			bot.SendMessage(update.Message.Chat.ID,"Started searching")
 			client,err:=youtube.NewYoutubeClient(*key)
 			if err!=nil{
-				log.Fatal("Error creating new youtube client: ",err)
+				logrus.Error("Error creating new youtube client: ",err)
+				bot.SendMessage(update.Message.Chat.ID,"Unexpected error. Please try again")
+				continue
 			}
-
+			logrus.Info("Started searching video")
 			vid,err:=client.Search(update.Message.Text)
 			if err!=nil{
-				log.Fatal("Error searching: ",err)
+				logrus.Error("Error searching: ",err)
+				bot.SendMessage(update.Message.Chat.ID,"Unexpected error. Please try again")
+				continue
 			}
-			vidInfo,err:=ffmpeg.GetVideoInfo(videolink+vid.Id)
+			logrus.Info("Successfully find video ",vid.Title)
+			logrus.Info("Started getting video info")
+			vidInfo,err:=ffmpeg.GetVideoInfo(videoLink+vid.Id)
 			if err!=nil{
-				log.Fatal("Error getting video info: ",err)
+				logrus.Error("Error getting video info: ",err)
+				bot.SendMessage(update.Message.Chat.ID,"Unexpected error. Please try again")
+				continue
 			}
+			logrus.Info("Successfully got video info")
 			url,err:=vidInfo.GetDownloadLink()
 			if err!=nil{
-				log.Fatal("Error getting video info: ",err)
+				logrus.Error("Error getting video info: ",err)
+				bot.SendMessage(update.Message.Chat.ID,"Unexpected error. Please try again")
+				continue
 			}
-			log.Println("Got download link")
+			logrus.Info("Successfully got download link")
 			//channel<-1
 			bot.SendMessage(update.Message.Chat.ID,"Started converting")
 			audioName:=vid.Title+".mp3"
@@ -108,15 +125,19 @@ func main(){
 				}
 			}()
 
+			logrus.Info("Started converting video")
 			err=ffmpeg.ConvertVideoToAudio(url,audioName)
 			if err!=nil{
-				log.Fatal("Converting error: ",err)
+				logrus.Error("Converting error: ",err)
+				bot.SendMessage(update.Message.Chat.ID,"Unexpected error. Please try again")
+				continue
 			}
-			log.Println("Finished  converting process")
+			logrus.Info("Finished  converting process")
 			bot.SendAudio(update.Message.Chat.ID,audioName)
+			logrus.Info("Sended message to client")
 			channel<-2
 			os.Remove(audioName)
-			log.Println("Removed file ",audioName)
+			logrus.Info("Removed file ",audioName)
 		}
 	}
 }
