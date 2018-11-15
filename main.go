@@ -1,0 +1,122 @@
+package main
+
+import (
+	"flag"
+	"github.com/go-telegram-bot-api/telegram-bot-api"
+	"log"
+	"time"
+	"github.com/baitulakova/TelegramBotController/youtube"
+	"github.com/baitulakova/TelegramBotController/ffmpeg"
+	"os"
+)
+
+var token=flag.String("t","","unique bot's token provided by @BotFather on Telegram")
+var key=flag.String("key","","Developer key")
+var videolink ="https://www.youtube.com/watch?v="
+
+type Bot struct{
+	BotAPI *tgbotapi.BotAPI
+	Update tgbotapi.UpdateConfig
+	UpdatesChannel tgbotapi.UpdatesChannel
+}
+
+func NewBot(token string)(Bot,error){
+	Bot:=Bot{}
+	if token==""{
+		log.Fatal("Token is empty")
+	}
+	botApi,err:=tgbotapi.NewBotAPI(token)
+	if err!=nil{
+		return Bot,err
+	}
+	Bot.BotAPI=botApi
+	Bot.BotAPI.Debug=true
+
+	return Bot,err
+}
+
+func (bot *Bot)GetUpdates(){
+	u:=tgbotapi.NewUpdate(0)
+	u.Timeout=60
+
+	updates,err:=bot.BotAPI.GetUpdatesChan(u)
+	if err!=nil{
+		log.Fatal("Error getting updates: ",err)
+	}
+	bot.UpdatesChannel=updates
+	updates.Clear()
+}
+
+func (b *Bot) SendMessage(chatId int64,msg string){
+	Message:=tgbotapi.NewMessage(chatId,msg)
+	b.BotAPI.Send(Message)
+}
+
+func (b *Bot) SendAudio(chatId int64,filename string){
+	audio:=tgbotapi.NewAudioUpload(chatId,filename)
+	b.BotAPI.Send(audio)
+}
+
+func main(){
+	flag.Parse()
+	bot,err:=NewBot(*token)
+	if err!=nil{
+		log.Fatal("Error creating bot")
+	}
+	bot.GetUpdates()
+	time.Sleep(time.Millisecond*500)
+	bot.UpdatesChannel.Clear()
+
+	channel:=make(chan int,2)
+
+	for update:=range bot.UpdatesChannel{
+		if update.Message==nil{
+			continue
+		}
+		if update.Message.Text!="/start"{
+			log.Println(update.Message.Text)
+			bot.SendMessage(update.Message.Chat.ID,"Started searching")
+			client,err:=youtube.NewYoutubeClient(*key)
+			if err!=nil{
+				log.Fatal("Error creating new youtube client: ",err)
+			}
+
+			vid,err:=client.Search(update.Message.Text)
+			if err!=nil{
+				log.Fatal("Error searching: ",err)
+			}
+			vidInfo,err:=ffmpeg.GetVideoInfo(videolink+vid.Id)
+			if err!=nil{
+				log.Fatal("Error getting video info: ",err)
+			}
+			url,err:=vidInfo.GetDownloadLink()
+			if err!=nil{
+				log.Fatal("Error getting video info: ",err)
+			}
+			log.Println("Got download link")
+			//channel<-1
+			bot.SendMessage(update.Message.Chat.ID,"Started converting")
+			audioName:=vid.Title+".mp3"
+
+			go func(){
+				for{
+					bot.SendMessage(update.Message.Chat.ID,"I am converting video")
+					time.Sleep(time.Second*5)
+					if n:=<-channel;n==2{
+						break
+					}
+				}
+			}()
+
+			err=ffmpeg.ConvertVideoToAudio(url,audioName)
+			if err!=nil{
+				log.Fatal("Converting error: ",err)
+			}
+			log.Println("Finished  converting process")
+			bot.SendAudio(update.Message.Chat.ID,audioName)
+			channel<-2
+			os.Remove(audioName)
+			log.Println("Removed file ",audioName)
+		}
+	}
+}

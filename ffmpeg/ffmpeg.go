@@ -22,16 +22,16 @@ func GetVideoInfo(link string)(VideoInfo,error){
 	}else {
 		log.Println("Length formats is 0")
 	}
+	vidInfo.Info=vid
 	return vidInfo,err
 }
 
-func (info *VideoInfo)GetDownloadURL()(string,error){
+func (info VideoInfo)GetDownloadLink()(string,error){
 	url,err:=info.Info.GetDownloadURL(info.Format)
 	if err!=nil {
 		return "", err
 	}
-	URL:=url.String()
-	return URL,err
+	return url.String(),err
 }
 
 func ConvertVideoToAudio(downloadLink,audioname string)error{
