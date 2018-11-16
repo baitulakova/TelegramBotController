@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 	"github.com/go-telegram-bot-api/telegram-bot-api"
-	"github.com/Sirupsen/logrus"
+	"github.com/sirupsen/logrus"
 	"time"
 	"github.com/baitulakova/TelegramBotController/youtube"
 	"github.com/baitulakova/TelegramBotController/ffmpeg"
