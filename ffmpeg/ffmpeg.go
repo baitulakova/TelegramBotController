@@ -4,6 +4,7 @@ import (
 	"github.com/rylio/ytdl"
 	"log"
 	"os/exec"
+	"github.com/Sirupsen/logrus"
 )
 
 type VideoInfo struct {
@@ -35,6 +36,7 @@ func (info VideoInfo)GetDownloadLink()(string,error){
 }
 
 func ConvertVideoToAudio(downloadLink,audioname string)error{
+	logrus.Info("Convert: ",audioname)
 	cmd:=exec.Command("ffmpeg","-i",downloadLink,audioname)
 	err:=cmd.Run()
 	if err!=nil{

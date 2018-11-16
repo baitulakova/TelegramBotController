@@ -10,8 +10,8 @@ import (
 	"os"
 )
 
-var token=flag.String("t","","unique bot's token provided by @BotFather on Telegram")
-var key=flag.String("key","","Developer key")
+var token=os.Getenv("TOKEN")
+var key=os.Getenv("KEY")
 var videoLink ="https://www.youtube.com/watch?v="
 
 type Bot struct{
@@ -23,7 +23,7 @@ type Bot struct{
 func NewBot(token string)(Bot,error){
 	Bot:=Bot{}
 	if token==""{
-		logrus.Fatal("Token is empty")
+		logrus.Fatal("Token is empty: ",token)
 	}
 	botApi,err:=tgbotapi.NewBotAPI(token)
 	if err!=nil{
@@ -75,14 +75,23 @@ func (b *Bot) SendNotification(update tgbotapi.Update,channel chan bool,msg stri
 	logrus.Infof("Stopped sending notifications. [%v]",count)
 }
 
+var channel chan bool
+
 func main(){
 	flag.Parse()
-	bot,err:=NewBot(*token)
+	bot,err:=NewBot(token)
 	if err!=nil{
 		logrus.Fatal("Error creating bot")
 	}
+
 	logrus.Info("Bot started")
-	err=bot.GetUpdates()
+	go bot.start()
+
+	<-channel
+}
+
+func (bot *Bot) start() {
+	err:=bot.GetUpdates()
 	if err!=nil{
 		logrus.Error("Error getting updates")
 	}
@@ -100,7 +109,7 @@ func main(){
 		if update.Message.Text!="/start"{
 			logrus.Info("Client sended: ", update.Message.Text)
 			bot.SendMessage(update.Message.Chat.ID,"Started searching")
-			client,err:=youtube.NewYoutubeClient(*key)
+			client,err:=youtube.NewYoutubeClient(key)
 			if err!=nil{
 				logrus.Error("Error creating new youtube client: ",err)
 				bot.SendMessage(update.Message.Chat.ID,"Unexpected error. Please try again")
@@ -136,6 +145,7 @@ func main(){
 			channel1<-true
 			bot.SendMessage(update.Message.Chat.ID,"Started converting")
 			audioName:=vid.Title+".mp3"
+			logrus.Info("Audioname: ",audioName)
 
 			logrus.Info("Started sending notifications to user")
 			go bot.SendNotification(update,channel2,"Please wait. I am converting video")
@@ -155,4 +165,5 @@ func main(){
 			logrus.Info("Removed file ",audioName)
 		}
 	}
+	channel<-true
 }
