@@ -5,9 +5,9 @@ import (
 	"github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/sirupsen/logrus"
 	"time"
-	"github.com/baitulakova/TelegramBotController/youtube"
-	"github.com/baitulakova/TelegramBotController/ffmpeg"
 	"os"
+	"github.com/baitulakova/TelegramBotController/ffmpeg"
+	"github.com/baitulakova/TelegramBotController/youtube"
 )
 
 var token=os.Getenv("TOKEN")
@@ -72,7 +72,7 @@ func (b *Bot) SendNotification(update tgbotapi.Update,channel chan bool,msg stri
 	}
 }
 
-var channel chan bool
+var stopped chan bool
 
 func main(){
 	flag.Parse()
@@ -84,7 +84,7 @@ func main(){
 	logrus.Info("Bot started")
 	go bot.start()
 
-	<-channel
+	<-stopped
 }
 
 func (bot *Bot) start() {
@@ -96,64 +96,70 @@ func (bot *Bot) start() {
 	time.Sleep(time.Millisecond*500)
 	bot.UpdatesChannel.Clear()
 
-	channel1:=make(chan bool)
-	channel2:=make(chan bool)
-
 	for update:=range bot.UpdatesChannel{
 		if update.Message==nil{
 			continue
 		}
-		if update.Message.Text=="/stop"{
-			break
-		}
-		if update.Message.Text!="/start"{
+		go bot.HandleUpdate(update)
+	}
+	//send true to main
+	stopped<-true
+}
+
+func (bot *Bot) HandleUpdate(update tgbotapi.Update){
+	channel1:=make(chan bool)
+	channel2:=make(chan bool)
+	if update.Message.Text!="/start" {
+		for {
 			logrus.Info("Client sent: ", update.Message.Text)
-			bot.SendMessage(update.Message.Chat.ID,"Started searching")
-			client,err:=youtube.NewYoutubeClient(key)
-			if err!=nil{
-				logrus.Error("Error creating new youtube client: ",err)
-				bot.SendMessage(update.Message.Chat.ID,"Unexpected error. Please try again")
+			bot.SendMessage(update.Message.Chat.ID, "Started searching")
+			client, err := youtube.NewYoutubeClient(key)
+			if err != nil {
+				logrus.Error("Error creating new youtube client: ", err)
+				bot.SendMessage(update.Message.Chat.ID, "Unexpected error. Please try again")
 				continue
 			}
 
 			logrus.Info("Started sending notifications to user")
-			go bot.SendNotification(update,channel1,"I am searching video")
+			go bot.SendNotification(update, channel1, "I am searching video")
 
 			logrus.Info("Started searching video")
-			vid,err:=client.Search(update.Message.Text)
-			if err!=nil{
-				logrus.Error("Error searching: ",err)
-				bot.SendMessage(update.Message.Chat.ID,"Unexpected error. Please try again")
+			vid, err := client.Search(update.Message.Text)
+			if err != nil {
+				logrus.Error("Error searching: ", err)
+				bot.SendMessage(update.Message.Chat.ID, "Unexpected error. Please try again")
 				continue
 			}
-			logrus.Info("Successfully find video ",vid.Title)
-			channel1<-true
+			logrus.Info("Successfully find video ", vid.Title)
+			//send true to stop notifications
+			channel1 <- true
 			logrus.Info("Started getting video info")
-			vidInfo,err:=ffmpeg.GetVideoInfo(videoLink+vid.Id)
-			if err!=nil{
-				logrus.Error("Error getting video info: ",err)
-				bot.SendMessage(update.Message.Chat.ID,"Unexpected error. Please try again")
+			vidInfo, err := ffmpeg.GetVideoInfo(videoLink + vid.Id)
+			if err != nil {
+				logrus.Error("Error getting video info: ", err)
+				bot.SendMessage(update.Message.Chat.ID, "Unexpected error. Please try again")
 				continue
 			}
-			bot.SendMessage(update.Message.Chat.ID,"Started converting")
+			bot.SendMessage(update.Message.Chat.ID, "Started converting")
 
 			logrus.Info("Started sending notifications to user")
-			go bot.SendNotification(update,channel2,"Please wait. I am converting video")
+			go bot.SendNotification(update, channel2, "Please wait. I am converting video")
 
-			audioName:=vid.Title+".mp3"
-			errConvert:=vidInfo.GetDownloadLinkAndConvert(audioName)
-			if errConvert!=nil{
-				logrus.Error("Converting error: ",err)
-				bot.SendMessage(update.Message.Chat.ID,"I didn't convert this video. Please try enter other text")
+			audioName := vid.Title + ".mp3"
+			errConvert := vidInfo.GetDownloadLinkAndConvert(audioName)
+			if errConvert != nil {
+				logrus.Error("Converting error: ", err)
+				bot.SendMessage(update.Message.Chat.ID, "I didn't convert this video. Please try enter other text")
 				continue
 			}
 			logrus.Info("Finished  converting process")
-			channel2<-true
-			bot.SendAudio(update.Message.Chat.ID,audioName)
+			//send true to stop notifications
+			channel2 <- true
+			bot.SendAudio(update.Message.Chat.ID, audioName)
 			logrus.Info("Sent message to client")
 			os.Remove(audioName)
-			logrus.Info("Removed file ",audioName)
+			logrus.Info("Removed file ", audioName)
+			break
 		}
 	}
-	channel<-true
 }
