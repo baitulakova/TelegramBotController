@@ -59,7 +59,6 @@ func (b *Bot) SendAudio(chatId int64,filename string){
 }
 
 func (b *Bot) SendNotification(update tgbotapi.Update,channel chan bool,msg string){
-	count:=0
 	for{
 		b.SendMessage(update.Message.Chat.ID,msg)
 		time.Sleep(time.Second*5)
@@ -67,12 +66,10 @@ func (b *Bot) SendNotification(update tgbotapi.Update,channel chan bool,msg stri
 		time.Sleep(time.Second*5)
 		b.SendMessage(update.Message.Chat.ID,msg)
 		time.Sleep(time.Second*5)
-		if n:=<-channel;n{
+		if <-channel{
 			break
 		}
-		count++
 	}
-	logrus.Infof("Stopped sending notifications. [%v]",count)
 }
 
 var channel chan bool
@@ -106,8 +103,11 @@ func (bot *Bot) start() {
 		if update.Message==nil{
 			continue
 		}
+		if update.Message.Text=="/stop"{
+			break
+		}
 		if update.Message.Text!="/start"{
-			logrus.Info("Client sended: ", update.Message.Text)
+			logrus.Info("Client sent: ", update.Message.Text)
 			bot.SendMessage(update.Message.Chat.ID,"Started searching")
 			client,err:=youtube.NewYoutubeClient(key)
 			if err!=nil{
@@ -127,6 +127,7 @@ func (bot *Bot) start() {
 				continue
 			}
 			logrus.Info("Successfully find video ",vid.Title)
+			channel1<-true
 			logrus.Info("Started getting video info")
 			vidInfo,err:=ffmpeg.GetVideoInfo(videoLink+vid.Id)
 			if err!=nil{
@@ -134,33 +135,22 @@ func (bot *Bot) start() {
 				bot.SendMessage(update.Message.Chat.ID,"Unexpected error. Please try again")
 				continue
 			}
-			logrus.Info("Successfully got video info")
-			url,err:=vidInfo.GetDownloadLink()
-			if err!=nil{
-				logrus.Error("Error getting video info: ",err)
-				bot.SendMessage(update.Message.Chat.ID,"Unexpected error. Please try again")
-				continue
-			}
-			logrus.Info("Successfully got download link")
-			channel1<-true
 			bot.SendMessage(update.Message.Chat.ID,"Started converting")
-			audioName:=vid.Title+".mp3"
-			logrus.Info("Audioname: ",audioName)
 
 			logrus.Info("Started sending notifications to user")
 			go bot.SendNotification(update,channel2,"Please wait. I am converting video")
 
-			logrus.Info("Started converting video")
-			err=ffmpeg.ConvertVideoToAudio(url,audioName)
-			if err!=nil{
+			audioName:=vid.Title+".mp3"
+			errConvert:=vidInfo.GetDownloadLinkAndConvert(audioName)
+			if errConvert!=nil{
 				logrus.Error("Converting error: ",err)
-				bot.SendMessage(update.Message.Chat.ID,"Unexpected error. Please try again")
+				bot.SendMessage(update.Message.Chat.ID,"I didn't convert this video. Please try enter other text")
 				continue
 			}
 			logrus.Info("Finished  converting process")
-			bot.SendAudio(update.Message.Chat.ID,audioName)
-			logrus.Info("Sended message to client")
 			channel2<-true
+			bot.SendAudio(update.Message.Chat.ID,audioName)
+			logrus.Info("Sent message to client")
 			os.Remove(audioName)
 			logrus.Info("Removed file ",audioName)
 		}
