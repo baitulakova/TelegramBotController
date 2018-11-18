@@ -58,18 +58,13 @@ func (b *Bot) SendAudio(chatId int64,filename string){
 	b.BotAPI.Send(audio)
 }
 
-func (b *Bot) SendNotification(update tgbotapi.Update,channel chan bool,msg string){
-	for{
-		b.SendMessage(update.Message.Chat.ID,msg)
+func (b *Bot) SendNotification(update tgbotapi.Update,channel chan bool,msg string,count int){
+	for i:=0;i<count;i++{
+		b.SendMessage(update.Message.Chat.ID, msg)
 		time.Sleep(time.Second*5)
-		b.SendMessage(update.Message.Chat.ID,msg)
-		time.Sleep(time.Second*5)
-		b.SendMessage(update.Message.Chat.ID,msg)
-		time.Sleep(time.Second*5)
-		if <-channel{
-			break
-		}
 	}
+	<-channel
+	close(channel)
 }
 
 var stopped chan bool
@@ -107,8 +102,8 @@ func (bot *Bot) start() {
 }
 
 func (bot *Bot) HandleUpdate(update tgbotapi.Update){
-	channel1:=make(chan bool)
-	channel2:=make(chan bool)
+	channel1:=make(chan bool,1)
+	channel2:=make(chan bool,1)
 	if update.Message.Text!="/start" {
 		for {
 			logrus.Info("Client sent: ", update.Message.Text)
@@ -121,7 +116,7 @@ func (bot *Bot) HandleUpdate(update tgbotapi.Update){
 			}
 
 			logrus.Info("Started sending notifications to user")
-			go bot.SendNotification(update, channel1, "I am searching video")
+			go bot.SendNotification(update, channel1, "I am searching video",1)
 
 			logrus.Info("Started searching video")
 			vid, err := client.Search(update.Message.Text)
@@ -143,7 +138,7 @@ func (bot *Bot) HandleUpdate(update tgbotapi.Update){
 			bot.SendMessage(update.Message.Chat.ID, "Started converting")
 
 			logrus.Info("Started sending notifications to user")
-			go bot.SendNotification(update, channel2, "Please wait. I am converting video")
+			go bot.SendNotification(update, channel2, "Please wait. I am converting video",5)
 
 			audioName := vid.Title + ".mp3"
 			errConvert := vidInfo.GetDownloadLinkAndConvert(audioName)
