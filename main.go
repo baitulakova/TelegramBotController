@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/sirupsen/logrus"
 	"time"
@@ -13,6 +12,7 @@ import (
 var token=os.Getenv("TOKEN")
 var key=os.Getenv("KEY")
 var videoLink ="https://www.youtube.com/watch?v="
+//var stopped chan bool
 
 type Bot struct{
 	BotAPI *tgbotapi.BotAPI
@@ -64,22 +64,19 @@ func (b *Bot) SendNotification(update tgbotapi.Update,channel chan bool,msg stri
 		time.Sleep(time.Second*5)
 	}
 	<-channel
-	close(channel)
+	//close(channel)
 }
 
-var stopped chan bool
-
 func main(){
-	flag.Parse()
 	bot,err:=NewBot(token)
 	if err!=nil{
 		logrus.Fatal("Error creating bot")
 	}
 
 	logrus.Info("Bot started")
-	go bot.start()
+	bot.start()
 
-	<-stopped
+	//<-stopped
 }
 
 func (bot *Bot) start() {
@@ -98,7 +95,7 @@ func (bot *Bot) start() {
 		go bot.HandleUpdate(update)
 	}
 	//send true to main
-	stopped<-true
+	//stopped<-true
 }
 
 func (bot *Bot) HandleUpdate(update tgbotapi.Update){
@@ -112,7 +109,7 @@ func (bot *Bot) HandleUpdate(update tgbotapi.Update){
 			if err != nil {
 				logrus.Error("Error creating new youtube client: ", err)
 				bot.SendMessage(update.Message.Chat.ID, "Unexpected error. Please try again")
-				continue
+				break
 			}
 
 			logrus.Info("Started sending notifications to user")
@@ -123,7 +120,7 @@ func (bot *Bot) HandleUpdate(update tgbotapi.Update){
 			if err != nil {
 				logrus.Error("Error searching: ", err)
 				bot.SendMessage(update.Message.Chat.ID, "Unexpected error. Please try again")
-				continue
+				break
 			}
 			logrus.Info("Successfully find video ", vid.Title)
 			//send true to stop notifications
@@ -133,7 +130,7 @@ func (bot *Bot) HandleUpdate(update tgbotapi.Update){
 			if err != nil {
 				logrus.Error("Error getting video info: ", err)
 				bot.SendMessage(update.Message.Chat.ID, "Unexpected error. Please try again")
-				continue
+				break
 			}
 			bot.SendMessage(update.Message.Chat.ID, "Started converting")
 
@@ -145,13 +142,13 @@ func (bot *Bot) HandleUpdate(update tgbotapi.Update){
 			if errConvert != nil {
 				logrus.Error("Converting error: ", err)
 				bot.SendMessage(update.Message.Chat.ID, "I didn't convert this video. Please try enter other text")
-				continue
+				break
 			}
 			logrus.Info("Finished  converting process")
 			//send true to stop notifications
 			channel2 <- true
 			bot.SendAudio(update.Message.Chat.ID, audioName)
-			logrus.Info("Sent message to client")
+			logrus.Info("Sent audio to client")
 			os.Remove(audioName)
 			logrus.Info("Removed file ", audioName)
 			break
