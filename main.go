@@ -58,6 +58,14 @@ func (b *Bot) SendAudio(chatId int64,filename string){
 	b.BotAPI.Send(audio)
 }
 
+func IsFileExist(filename string)bool{
+	_,err:=os.Stat(filename)
+	if err!=nil {
+		return false
+	}
+	return true
+}
+
 func (b *Bot) SendNotification(update tgbotapi.Update,channel chan bool,msg string,count int){
 	for i:=0;i<count;i++{
 		b.SendMessage(update.Message.Chat.ID, msg)
@@ -65,6 +73,17 @@ func (b *Bot) SendNotification(update tgbotapi.Update,channel chan bool,msg stri
 	}
 	<-channel
 	//close(channel)
+}
+
+func (b *Bot) SendNotificationAboutConverting(update tgbotapi.Update,channel chan bool,msg,filename string){
+	for {
+		b.SendMessage(update.Message.Chat.ID,msg)
+		time.Sleep(time.Second*5)
+		if !IsFileExist(filename){
+			break
+		}
+	}
+	<-channel
 }
 
 func main(){
@@ -134,10 +153,10 @@ func (bot *Bot) HandleUpdate(update tgbotapi.Update){
 			}
 			bot.SendMessage(update.Message.Chat.ID, "Started converting")
 
-			logrus.Info("Started sending notifications to user")
-			go bot.SendNotification(update, channel2, "Please wait. I am converting video",5)
-
 			audioName := vid.Title + ".mp3"
+			logrus.Info("Started sending notifications to user")
+			go bot.SendNotificationAboutConverting(update, channel2, "Please wait. I am converting video",audioName)
+
 			errConvert := vidInfo.GetDownloadLinkAndConvert(audioName)
 			if errConvert != nil {
 				logrus.Error("Converting error: ", err)
